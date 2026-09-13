@@ -1,0 +1,77 @@
+name: Wind field
+
+# Rebuilds the app's wind texture from the latest NOAA GFS run and publishes
+# it to GitHub Pages, which is all the "backend" this needs: the app fetches
+# one static file from a CDN, and nothing here runs a server or costs money.
+#
+# GFS puts out four runs a day (00/06/12/18 UTC) and publishes each one three
+# to five hours later, so these times aim at "shortly after it lands". The
+# build walks back through earlier runs if the newest isn't up yet, so a late
+# publication costs freshness, not the run.
+on:
+  schedule:
+    - cron: "10 5,11,17,23 * * *"
+  workflow_dispatch:
+
+# Required by the Pages deployment below.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a queued run should wait rather than race.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # `eccodes` ships the GRIB library itself in its wheels, so there is no
+      # apt step and nothing to compile.
+      - name: Install dependencies
+        run: pip install --quiet numpy pillow eccodes
+
+      - name: Build wind texture
+        run: python tools/build_wind_field.py site/wind
+
+      # A landing page purely so the deployment has something at its root and
+      # the published files are easy to eyeball in a browser.
+      - name: Write index
+        run: |
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>Weather data</title>
+          <body style="font-family:-apple-system,sans-serif;max-width:40em;margin:4em auto;padding:0 1em">
+          <h1>Weather data</h1>
+          <p>Static data for the <b>weather3D</b> iOS app. Wind field built
+          from NOAA GFS, rebuilt four times a day. Public domain.</p>
+          <ul>
+            <li><a href="wind/wind.png">wind/wind.png</a> — R = eastward, G = northward, ±50 m/s</li>
+            <li><a href="wind/wind.json">wind/wind.json</a> — which model run it came from</li>
+          </ul>
+          <p><a href="https://github.com/DvVuong/weather3D-data">Source and build script</a></p>
+          </body>
+          HTML
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
