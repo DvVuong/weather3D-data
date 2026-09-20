@@ -1,0 +1,59 @@
+# Copy this into the `weather3D-data` repo as
+# .github/workflows/country-field.yml, alongside whatever workflow already
+# bakes the wind texture.
+#
+# It publishes countries/countries.json — one file holding the forecast for
+# every country the globe draws. The app fetches that single file instead of
+# asking WeatherKit for each of the 171 countries on every device, which is
+# what made the old arrangement cost scale with users rather than with data.
+name: Country field
+
+on:
+  schedule:
+    # GFS itself only runs four times a day (00/06/12/18z), so baking more
+    # often than that would re-publish identical numbers. These fire about
+    # three and a half hours after each run starts, by which point the
+    # forecast hours this needs have finished uploading.
+    - cron: "30 3,9,15,21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # GFS ships as GRIB2; eccodes is what decodes it. The pip wheel carries
+      # its own binaries, so no apt packages are needed.
+      - name: Install the GRIB reader
+        run: pip install --quiet eccodes numpy
+
+      # globe.json lives in the app repo and is the list of countries to bake.
+      # Checked out read-only here rather than duplicated, so the two can
+      # never drift apart.
+      - name: Fetch the country list
+        run: |
+          curl -fsSL -o globe.json \
+            "https://raw.githubusercontent.com/DvVuong/weather3D/main/Weather/Resources/globe.json"
+
+      - name: Bake
+        run: |
+          mkdir -p countries
+          python3 tools/build_country_field.py globe.json countries/countries.json
+
+      # Only commits when the bytes actually changed, so an unchanged forecast
+      # doesn't churn the repo history.
+      - name: Publish
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add countries/countries.json
+          git diff --staged --quiet || git commit -m "Country field $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
