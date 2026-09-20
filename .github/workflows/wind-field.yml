@@ -48,15 +48,21 @@ jobs:
       - name: Build wind texture
         run: python tools/build_wind_field.py site/wind
 
-      # One file holding the forecast for all 171 countries the globe draws.
-      # It replaces the app asking WeatherKit for each of them separately on
-      # every device — 171 billed calls per refresh, per install, for readings
-      # that are identical for everyone.
-      - name: Build country field
+      # The forecast for the 171 countries the globe draws and the 51 states
+      # the US map draws. Together they replace the app asking WeatherKit for
+      # each place separately on every device — 222 billed calls per refresh,
+      # per install, for readings that are identical for everyone.
+      #
+      # One invocation, two outputs: each GRIB step is fetched over the
+      # network and sampled in microseconds, so baking them separately would
+      # download the same forecast twice for nothing. Separate *files*
+      # though — most readers never open the US map.
+      - name: Build forecast fields
         run: |
-          mkdir -p site/countries
+          mkdir -p site/countries site/states
           python tools/build_country_field.py \
-            tools/country-points.json site/countries/countries.json
+            tools/country-points.json:site/countries/countries.json \
+            tools/state-points.json:site/states/states.json
 
       # A landing page purely so the deployment has something at its root and
       # the published files are easy to eyeball in a browser.
@@ -74,6 +80,7 @@ jobs:
             <li><a href="wind/wind.png">wind/wind.png</a> — R = eastward, G = northward, ±50 m/s</li>
             <li><a href="wind/wind.json">wind/wind.json</a> — which model run it came from</li>
             <li><a href="countries/countries.json">countries/countries.json</a> — forecast for 171 countries</li>
+            <li><a href="states/states.json">states/states.json</a> — forecast for 51 US states</li>
           </ul>
           <p><a href="https://github.com/DvVuong/weather3D-data">Source and build script</a></p>
           </body>

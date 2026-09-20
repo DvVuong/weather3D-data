@@ -1,0 +1,310 @@
+{
+ "points": [
+  {
+   "id": "ak",
+   "name": "Alaska",
+   "lat": 64.4988,
+   "lon": -152.7065
+  },
+  {
+   "id": "al",
+   "name": "Alabama",
+   "lat": 32.7839,
+   "lon": -86.8225
+  },
+  {
+   "id": "ar",
+   "name": "Arkansas",
+   "lat": 34.8966,
+   "lon": -92.4423
+  },
+  {
+   "id": "az",
+   "name": "Arizona",
+   "lat": 34.2812,
+   "lon": -111.6366
+  },
+  {
+   "id": "ca",
+   "name": "California",
+   "lat": 37.2467,
+   "lon": -119.6082
+  },
+  {
+   "id": "co",
+   "name": "Colorado",
+   "lat": 38.9972,
+   "lon": -105.5425
+  },
+  {
+   "id": "ct",
+   "name": "Connecticut",
+   "lat": 41.6114,
+   "lon": -72.7346
+  },
+  {
+   "id": "dc",
+   "name": "District of Columbia",
+   "lat": 38.9111,
+   "lon": -76.9889
+  },
+  {
+   "id": "de",
+   "name": "Delaware",
+   "lat": 39.0204,
+   "lon": -75.5197
+  },
+  {
+   "id": "fl",
+   "name": "Florida",
+   "lat": 28.6426,
+   "lon": -82.4928
+  },
+  {
+   "id": "ga",
+   "name": "Georgia",
+   "lat": 32.6578,
+   "lon": -83.456
+  },
+  {
+   "id": "hi",
+   "name": "Hawaii",
+   "lat": 19.6054,
+   "lon": -155.5262
+  },
+  {
+   "id": "ia",
+   "name": "Iowa",
+   "lat": 42.0809,
+   "lon": -93.4983
+  },
+  {
+   "id": "id",
+   "name": "Idaho",
+   "lat": 44.3811,
+   "lon": -114.6323
+  },
+  {
+   "id": "il",
+   "name": "Illinois",
+   "lat": 40.0697,
+   "lon": -89.1901
+  },
+  {
+   "id": "in",
+   "name": "Indiana",
+   "lat": 39.9085,
+   "lon": -86.2622
+  },
+  {
+   "id": "ks",
+   "name": "Kansas",
+   "lat": 38.4842,
+   "lon": -98.3534
+  },
+  {
+   "id": "ky",
+   "name": "Kentucky",
+   "lat": 37.5234,
+   "lon": -85.2873
+  },
+  {
+   "id": "la",
+   "name": "Louisiana",
+   "lat": 31.0374,
+   "lon": -91.9652
+  },
+  {
+   "id": "ma",
+   "name": "Massachusetts",
+   "lat": 42.2569,
+   "lon": -71.8031
+  },
+  {
+   "id": "md",
+   "name": "Maryland",
+   "lat": 39.0074,
+   "lon": -76.7437
+  },
+  {
+   "id": "me",
+   "name": "Maine",
+   "lat": 45.3598,
+   "lon": -69.2264
+  },
+  {
+   "id": "mi",
+   "name": "Michigan",
+   "lat": 43.4976,
+   "lon": -84.6108
+  },
+  {
+   "id": "mn",
+   "name": "Minnesota",
+   "lat": 46.3056,
+   "lon": -94.3202
+  },
+  {
+   "id": "mo",
+   "name": "Missouri",
+   "lat": 38.3799,
+   "lon": -92.4807
+  },
+  {
+   "id": "ms",
+   "name": "Mississippi",
+   "lat": 32.7551,
+   "lon": -89.6555
+  },
+  {
+   "id": "mt",
+   "name": "Montana",
+   "lat": 47.0336,
+   "lon": -109.6189
+  },
+  {
+   "id": "nc",
+   "name": "North Carolina",
+   "lat": 35.5325,
+   "lon": -79.3591
+  },
+  {
+   "id": "nd",
+   "name": "North Dakota",
+   "lat": 47.4266,
+   "lon": -100.4458
+  },
+  {
+   "id": "ne",
+   "name": "Nebraska",
+   "lat": 41.5283,
+   "lon": -99.8354
+  },
+  {
+   "id": "nh",
+   "name": "New Hampshire",
+   "lat": 43.6878,
+   "lon": -71.5826
+  },
+  {
+   "id": "nj",
+   "name": "New Jersey",
+   "lat": 40.1708,
+   "lon": -74.6679
+  },
+  {
+   "id": "nm",
+   "name": "New Mexico",
+   "lat": 34.4303,
+   "lon": -106.0793
+  },
+  {
+   "id": "nv",
+   "name": "Nevada",
+   "lat": 39.3588,
+   "lon": -116.652
+  },
+  {
+   "id": "ny",
+   "name": "New York",
+   "lat": 42.9423,
+   "lon": -75.5093
+  },
+  {
+   "id": "oh",
+   "name": "Ohio",
+   "lat": 40.2968,
+   "lon": -82.7727
+  },
+  {
+   "id": "ok",
+   "name": "Oklahoma",
+   "lat": 35.5873,
+   "lon": -97.5149
+  },
+  {
+   "id": "or",
+   "name": "Oregon",
+   "lat": 43.9358,
+   "lon": -120.5515
+  },
+  {
+   "id": "pa",
+   "name": "Pennsylvania",
+   "lat": 40.8621,
+   "lon": -77.7904
+  },
+  {
+   "id": "ri",
+   "name": "Rhode Island",
+   "lat": 41.6935,
+   "lon": -71.5798
+  },
+  {
+   "id": "sc",
+   "name": "South Carolina",
+   "lat": 33.9064,
+   "lon": -80.8987
+  },
+  {
+   "id": "sd",
+   "name": "South Dakota",
+   "lat": 44.4136,
+   "lon": -100.2538
+  },
+  {
+   "id": "tn",
+   "name": "Tennessee",
+   "lat": 35.8425,
+   "lon": -86.3337
+  },
+  {
+   "id": "tx",
+   "name": "Texas",
+   "lat": 31.4814,
+   "lon": -99.3379
+  },
+  {
+   "id": "ut",
+   "name": "Utah",
+   "lat": 39.3168,
+   "lon": -111.669
+  },
+  {
+   "id": "va",
+   "name": "Virginia",
+   "lat": 37.5143,
+   "lon": -78.8793
+  },
+  {
+   "id": "vt",
+   "name": "Vermont",
+   "lat": 44.049,
+   "lon": -72.6677
+  },
+  {
+   "id": "wa",
+   "name": "Washington",
+   "lat": 47.3759,
+   "lon": -120.4241
+  },
+  {
+   "id": "wi",
+   "name": "Wisconsin",
+   "lat": 44.6299,
+   "lon": -90.0134
+  },
+  {
+   "id": "wv",
+   "name": "West Virginia",
+   "lat": 38.6402,
+   "lon": -80.6227
+  },
+  {
+   "id": "wy",
+   "name": "Wyoming",
+   "lat": 43.0038,
+   "lon": -107.5582
+  }
+ ]
+}

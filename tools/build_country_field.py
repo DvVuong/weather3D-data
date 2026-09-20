@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bakes one forecast file for every country the globe draws, from NOAA GFS.
+"""Bakes one forecast file for a list of places, from NOAA GFS.
 
 Why this exists: the app used to ask WeatherKit for each of the 171 countries
 separately, every time the globe went stale — about 171 billed calls per
@@ -21,18 +21,31 @@ the whole 535 MB file.
 Output matches Swift's `[String: StateTimeline]` exactly, so the app decodes it
 with no conversion layer.
 
-The country list is `tools/country-points.json`: id, name, lat, lon for each
-of the 171, stripped out of the app's `globe.json` (which is 2.1 MB of
-polygon geometry this has no use for). `globe.json` itself also works, since
-the two share a shape.
+Two lists are baked with this, into two files:
 
-Usage:  python3 tools/build_country_field.py tools/country-points.json out/countries.json
-        python3 tools/build_country_field.py tools/country-points.json out.json --hours 6 --days 2
+  tools/country-points.json  the 171 countries the globe draws
+  tools/state-points.json    the 51 US states the states map draws
+
+Separate outputs on purpose. Most readers never open the US map, and the
+states are a third again as much data — making everyone download them to
+colour a globe would undo part of what this script exists to save.
+
+`country-points.json` is id/name/lat/lon stripped out of the app's
+`globe.json` (2.1 MB of polygon geometry this has no use for); `globe.json`
+itself also works, since the two share a shape.
+
+Usage:  python3 tools/build_country_field.py \\
+            tools/country-points.json:site/countries/countries.json \\
+            tools/state-points.json:site/states/states.json
+
+        python3 tools/build_country_field.py \\
+            tools/state-points.json:out.json --hours 3 --days 1     # quick check
 """
 
 import argparse
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -62,12 +75,29 @@ VARIABLES = {
 }
 
 
-def fetch(url, byte_range=None, timeout=120):
+def fetch(url, byte_range=None, timeout=120, attempts=4):
+    """One range request, retried through the usual transient failures.
+
+    This job makes a few hundred requests across several minutes and runs
+    unattended four times a day. Without a retry a single flaky handshake —
+    which is what ended one full bake, `_ssl.c:1112: handshake operation timed
+    out`, after three minutes of work — takes the whole run down and the
+    schedule publishes nothing until the next slot.
+    """
     request = urllib.request.Request(url)
     if byte_range:
         request.add_header("Range", f"bytes={byte_range[0]}-{byte_range[1]}")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read()
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except Exception as error:
+            if attempt == attempts - 1:
+                raise
+            delay = 2 ** attempt
+            print(f"  retry {attempt + 1}/{attempts - 1} in {delay}s ({error})",
+                  file=sys.stderr)
+            time.sleep(delay)
 
 
 def step_key(day, run, step):
@@ -208,49 +238,73 @@ def wind_from(u, v):
     return speed, float(direction)
 
 
+def load_points(path):
+    payload = json.load(open(path))
+    # Either key: the country list calls them "countries", the US list
+    # "points". The bake itself cares only about id/lat/lon.
+    places = payload.get("points") or payload["countries"]
+    return [(c["id"], c["lat"], c["lon"]) for c in places]
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("points", help="country list: tools/country-points.json")
-    parser.add_argument("out")
+    # One invocation, many outputs. Each GRIB step is a few hundred KB fetched
+    # over the network and the sampling itself is microseconds, so baking the
+    # countries and the states in separate runs would download the same
+    # forecast twice and double the job for nothing.
+    parser.add_argument("bake", nargs="+", metavar="POINTS:OUT",
+                        help="a points file and where to write its forecast, "
+                             "e.g. tools/state-points.json:site/states.json")
     parser.add_argument("--hours", type=int, default=24, help="length of the hourly series")
     parser.add_argument("--days", type=int, default=10, help="length of the daily series")
     args = parser.parse_args()
 
-    countries = json.load(open(args.points))["countries"]
-    points = [(c["id"], c["lat"], c["lon"]) for c in countries]
+    jobs = []
+    for spec in args.bake:
+        source, _, destination = spec.rpartition(":")
+        if not source:
+            raise SystemExit(f"expected POINTS:OUT, got {spec!r}")
+        points = load_points(source)
+        jobs.append({
+            "out": destination,
+            "points": points,
+            "series": {cid: {"hourly": [], "daily": []} for cid, _, _ in points},
+            "now": {},
+        })
+
     day, run, run_time = latest_run()
     print(f"run {day} {run:02d}z", file=sys.stderr)
-
-    series = {cid: {"hourly": [], "daily": []} for cid, _, _ in points}
-    now_reading = {}
+    total = sum(len(job["points"]) for job in jobs)
+    print(f"baking {total} places into {len(jobs)} file(s)", file=sys.stderr)
 
     # The hourly series: every forecast hour, all variables. Downloaded a
     # window at a time, then sampled in step order so the series stays
     # chronological whatever order the network answered in.
-    hours = range(1, args.hours + 1)
+    hours = list(range(1, args.hours + 1))
     for start in range(0, len(hours), STEP_WORKERS):
-        window = list(hours)[start:start + STEP_WORKERS]
+        window = hours[start:start + STEP_WORKERS]
         downloaded = read_steps(day, run, window, VARIABLES)
         for step in window:
             fields = downloaded[step]
             when = run_time + timedelta(hours=step)
-            for cid, lat, lon in points:
-                celsius = sample(fields["temperature"], lat, lon) - 273.15
-                rain = sample(fields["precipitation"], lat, lon) if "precipitation" in fields else None
-                cloud = sample(fields["cloud"], lat, lon) / 100 if "cloud" in fields else None
-                cape = sample(fields["cape"], lat, lon) if "cape" in fields else None
-                wind = wind_from(sample(fields["windU"], lat, lon), sample(fields["windV"], lat, lon))
-                entry = reading(when, celsius, rain, cloud, cape, wind)
-                series[cid]["hourly"].append(entry)
-                # The app's "now" is the first hour still ahead, the same
-                # reading its own WeatherKit path used to show.
-                if step == 1:
-                    now_reading[cid] = entry
+            for job in jobs:
+                for cid, lat, lon in job["points"]:
+                    celsius = sample(fields["temperature"], lat, lon) - 273.15
+                    rain = sample(fields["precipitation"], lat, lon) if "precipitation" in fields else None
+                    cloud = sample(fields["cloud"], lat, lon) / 100 if "cloud" in fields else None
+                    cape = sample(fields["cape"], lat, lon) if "cape" in fields else None
+                    wind = wind_from(sample(fields["windU"], lat, lon), sample(fields["windV"], lat, lon))
+                    entry = reading(when, celsius, rain, cloud, cape, wind)
+                    job["series"][cid]["hourly"].append(entry)
+                    # The app's "now" is the first hour still ahead, the same
+                    # reading its own WeatherKit path used to show.
+                    if step == 1:
+                        job["now"][cid] = entry
             print(f"  hour {step}/{args.hours}", file=sys.stderr)
 
     # The daily series. Four steps a day, six hours apart: the high is the
     # warmest of them, and the sky is read from whichever of the four lands
-    # nearest that country's own local noon.
+    # nearest that place's own local noon.
     #
     # Sampling a single fixed UTC hour instead was tried first and was wrong
     # by half a planet — hour 12 UTC is the middle of the night in Vietnam,
@@ -262,33 +316,35 @@ def main():
         downloaded = read_steps(day, run, [base + offset for offset in offsets], VARIABLES)
         steps = {offset: downloaded[base + offset] for offset in offsets}
         when = run_time + timedelta(hours=base + 12)
-        for cid, lat, lon in points:
-            highs = [sample(steps[o]["temperature"], lat, lon) - 273.15 for o in offsets]
-            # Local noon expressed as an hour of the UTC day, then the sampled
-            # step sitting closest to it.
-            local_noon = (12 - lon / 15) % 24
-            nearest = min(offsets, key=lambda o: min(abs((run + base + o) % 24 - local_noon),
-                                                     24 - abs((run + base + o) % 24 - local_noon)))
-            sky = steps[nearest]
-            rain = sample(sky["precipitation"], lat, lon) if "precipitation" in sky else None
-            cloud = sample(sky["cloud"], lat, lon) / 100 if "cloud" in sky else None
-            cape = sample(sky["cape"], lat, lon) if "cape" in sky else None
-            series[cid]["daily"].append(reading(when, max(highs), rain, cloud, cape))
+        for job in jobs:
+            for cid, lat, lon in job["points"]:
+                highs = [sample(steps[o]["temperature"], lat, lon) - 273.15 for o in offsets]
+                # Local noon expressed as an hour of the UTC day, then the
+                # sampled step sitting closest to it.
+                local_noon = (12 - lon / 15) % 24
+                nearest = min(offsets, key=lambda o: min(abs((run + base + o) % 24 - local_noon),
+                                                         24 - abs((run + base + o) % 24 - local_noon)))
+                sky = steps[nearest]
+                rain = sample(sky["precipitation"], lat, lon) if "precipitation" in sky else None
+                cloud = sample(sky["cloud"], lat, lon) / 100 if "cloud" in sky else None
+                cape = sample(sky["cape"], lat, lon) if "cape" in sky else None
+                job["series"][cid]["daily"].append(reading(when, max(highs), rain, cloud, cape))
         print(f"  day {ahead}/{args.days}", file=sys.stderr)
 
-    out = {
-        cid: {
-            "stateCode": cid,
-            "now": now_reading[cid],
-            "hourly": series[cid]["hourly"],
-            "daily": series[cid]["daily"],
+    stamp = datetime.now(timezone.utc).isoformat()
+    for job in jobs:
+        out = {
+            cid: {
+                "stateCode": cid,
+                "now": job["now"][cid],
+                "hourly": job["series"][cid]["hourly"],
+                "daily": job["series"][cid]["daily"],
+            }
+            for cid, _, _ in job["points"] if cid in job["now"]
         }
-        for cid, _, _ in points if cid in now_reading
-    }
-    payload = {"updatedAt": datetime.now(timezone.utc).isoformat(), "countries": out}
-    with open(args.out, "w") as handle:
-        json.dump(payload, handle, separators=(",", ":"))
-    print(f"wrote {args.out}: {len(out)} countries")
+        with open(job["out"], "w") as handle:
+            json.dump({"updatedAt": stamp, "countries": out}, handle, separators=(",", ":"))
+        print(f"wrote {job['out']}: {len(out)} places")
 
 
 if __name__ == "__main__":
