@@ -1,8 +1,14 @@
-name: Wind field
+name: Weather data
 
-# Rebuilds the app's wind texture from the latest NOAA GFS run and publishes
-# it to GitHub Pages, which is all the "backend" this needs: the app fetches
-# one static file from a CDN, and nothing here runs a server or costs money.
+# Rebuilds everything the app fetches from the latest NOAA GFS run and
+# publishes it to GitHub Pages, which is all the "backend" this needs: the app
+# fetches static files from a CDN, and nothing here runs a server or costs
+# money.
+#
+# Both outputs live in one workflow on purpose. A Pages deployment replaces
+# the whole site, so two workflows deploying separately would each delete the
+# other's files — the wind texture and the country field have to be uploaded
+# together or not at all.
 #
 # GFS puts out four runs a day (00/06/12/18 UTC) and publishes each one three
 # to five hours later, so these times aim at "shortly after it lands". The
@@ -42,6 +48,16 @@ jobs:
       - name: Build wind texture
         run: python tools/build_wind_field.py site/wind
 
+      # One file holding the forecast for all 171 countries the globe draws.
+      # It replaces the app asking WeatherKit for each of them separately on
+      # every device — 171 billed calls per refresh, per install, for readings
+      # that are identical for everyone.
+      - name: Build country field
+        run: |
+          mkdir -p site/countries
+          python tools/build_country_field.py \
+            tools/country-points.json site/countries/countries.json
+
       # A landing page purely so the deployment has something at its root and
       # the published files are easy to eyeball in a browser.
       - name: Write index
@@ -52,11 +68,12 @@ jobs:
           <title>Weather data</title>
           <body style="font-family:-apple-system,sans-serif;max-width:40em;margin:4em auto;padding:0 1em">
           <h1>Weather data</h1>
-          <p>Static data for the <b>weather3D</b> iOS app. Wind field built
-          from NOAA GFS, rebuilt four times a day. Public domain.</p>
+          <p>Static data for the <b>weather3D</b> iOS app, built from NOAA GFS
+          and rebuilt four times a day. Public domain.</p>
           <ul>
             <li><a href="wind/wind.png">wind/wind.png</a> — R = eastward, G = northward, ±50 m/s</li>
             <li><a href="wind/wind.json">wind/wind.json</a> — which model run it came from</li>
+            <li><a href="countries/countries.json">countries/countries.json</a> — forecast for 171 countries</li>
           </ul>
           <p><a href="https://github.com/DvVuong/weather3D-data">Source and build script</a></p>
           </body>

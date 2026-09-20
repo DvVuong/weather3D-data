@@ -44,6 +44,9 @@ import numpy as np
 BUCKET = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 PRODUCT = "pgrb2.0p25"
 
+# How many forecast steps to download at once. See `read_steps`.
+STEP_WORKERS = 4
+
 # GRIB labels exactly as they appear in the `.idx`, mapped to the short names
 # the rest of this script uses.
 VARIABLES = {
@@ -140,6 +143,20 @@ def read_step(day, run, step, names):
         return {name: grid(message) for name, message in messages}
 
 
+def read_steps(day, run, steps, names):
+    """Several forecast steps at once, keyed by step.
+
+    Reading them one after another left the job idle on the network for most
+    of its half hour, which matters because this now shares a Pages
+    deployment with the wind texture — every minute here is a minute the new
+    wind texture waits behind it. Four at a time is where the S3 mirror stops
+    getting faster; each step holds about 50 MB of decoded grids, so the
+    whole window is well inside a runner.
+    """
+    with ThreadPoolExecutor(max_workers=STEP_WORKERS) as pool:
+        return dict(pool.map(lambda step: (step, read_step(day, run, step, names)), steps))
+
+
 def condition(celsius, rain_mm_h, cloud_fraction, cape):
     """GFS reports physics, not a weather code, so the icon is derived here.
 
@@ -207,23 +224,29 @@ def main():
     series = {cid: {"hourly": [], "daily": []} for cid, _, _ in points}
     now_reading = {}
 
-    # The hourly series: every forecast hour, all variables.
-    for step in range(1, args.hours + 1):
-        fields = read_step(day, run, step, VARIABLES)
-        when = run_time + timedelta(hours=step)
-        for cid, lat, lon in points:
-            celsius = sample(fields["temperature"], lat, lon) - 273.15
-            rain = sample(fields["precipitation"], lat, lon) if "precipitation" in fields else None
-            cloud = sample(fields["cloud"], lat, lon) / 100 if "cloud" in fields else None
-            cape = sample(fields["cape"], lat, lon) if "cape" in fields else None
-            wind = wind_from(sample(fields["windU"], lat, lon), sample(fields["windV"], lat, lon))
-            entry = reading(when, celsius, rain, cloud, cape, wind)
-            series[cid]["hourly"].append(entry)
-            # The app's "now" is the first hour still ahead, the same reading
-            # its own WeatherKit path used to show.
-            if step == 1:
-                now_reading[cid] = entry
-        print(f"  hour {step}/{args.hours}", file=sys.stderr)
+    # The hourly series: every forecast hour, all variables. Downloaded a
+    # window at a time, then sampled in step order so the series stays
+    # chronological whatever order the network answered in.
+    hours = range(1, args.hours + 1)
+    for start in range(0, len(hours), STEP_WORKERS):
+        window = list(hours)[start:start + STEP_WORKERS]
+        downloaded = read_steps(day, run, window, VARIABLES)
+        for step in window:
+            fields = downloaded[step]
+            when = run_time + timedelta(hours=step)
+            for cid, lat, lon in points:
+                celsius = sample(fields["temperature"], lat, lon) - 273.15
+                rain = sample(fields["precipitation"], lat, lon) if "precipitation" in fields else None
+                cloud = sample(fields["cloud"], lat, lon) / 100 if "cloud" in fields else None
+                cape = sample(fields["cape"], lat, lon) if "cape" in fields else None
+                wind = wind_from(sample(fields["windU"], lat, lon), sample(fields["windV"], lat, lon))
+                entry = reading(when, celsius, rain, cloud, cape, wind)
+                series[cid]["hourly"].append(entry)
+                # The app's "now" is the first hour still ahead, the same
+                # reading its own WeatherKit path used to show.
+                if step == 1:
+                    now_reading[cid] = entry
+            print(f"  hour {step}/{args.hours}", file=sys.stderr)
 
     # The daily series. Four steps a day, six hours apart: the high is the
     # warmest of them, and the sky is read from whichever of the four lands
@@ -236,7 +259,8 @@ def main():
     for ahead in range(1, args.days + 1):
         base = ahead * 24
         offsets = (0, 6, 12, 18)
-        steps = {offset: read_step(day, run, base + offset, VARIABLES) for offset in offsets}
+        downloaded = read_steps(day, run, [base + offset for offset in offsets], VARIABLES)
+        steps = {offset: downloaded[base + offset] for offset in offsets}
         when = run_time + timedelta(hours=base + 12)
         for cid, lat, lon in points:
             highs = [sample(steps[o]["temperature"], lat, lon) - 273.15 for o in offsets]
