@@ -44,6 +44,7 @@ Usage:  python3 tools/build_country_field.py \\
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -104,22 +105,54 @@ def step_key(day, run, step):
     return f"gfs.{day}/{run:02d}/atmos/gfs.t{run:02d}z.{PRODUCT}.f{step:03d}"
 
 
-def latest_run(max_age_hours=30):
-    """The newest run whose first forecast hour has finished uploading."""
+def step_exists(day, run, step, timeout=20, attempts=3):
+    """Whether this step's `.idx` is up, tolerating a flaky probe.
+
+    Everything that can go wrong with one HTTP request is a "no" worth
+    retrying, not a reason to end the job — including the ones that are not
+    `URLError`. A read timeout raises `TimeoutError` and a dropped keep-alive
+    raises `http.client.RemoteDisconnected`, neither of which inherits from
+    it; catching only `URLError` is what killed one scheduled run in six,
+    always within half a minute of starting, long before the bake itself had
+    a chance to fail at anything.
+    """
+    url = f"{BUCKET}/{step_key(day, run, step)}.idx"
+    for attempt in range(attempts):
+        try:
+            request = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.status == 200
+        except urllib.error.HTTPError as error:
+            # A plain 404 is the answer, not a failure: that step is not up.
+            if error.code == 404:
+                return False
+            if attempt == attempts - 1:
+                return False
+        except Exception:
+            if attempt == attempts - 1:
+                return False
+        time.sleep(2 ** attempt)
+    return False
+
+
+def latest_run(last_step, max_age_hours=36):
+    """The newest run that has finished uploading everything this bake needs.
+
+    Probing the *last* step rather than the first is the point. NOAA uploads a
+    run over roughly an hour, so between those two moments `f001` answers
+    while `f258` is still missing — and the old check accepted such a run and
+    then died part-way through, on a schedule that fires while exactly that is
+    happening. If the final step is there, every earlier one is.
+    """
     now = datetime.now(timezone.utc)
     for back in range(0, max_age_hours, 6):
         moment = now - timedelta(hours=back)
         run = (moment.hour // 6) * 6
         day = moment.strftime("%Y%m%d")
-        try:
-            request = urllib.request.Request(f"{BUCKET}/{step_key(day, run, 1)}.idx",
-                                             method="HEAD")
-            with urllib.request.urlopen(request, timeout=30) as response:
-                if response.status == 200:
-                    return day, run, moment.replace(hour=run, minute=0, second=0, microsecond=0)
-        except urllib.error.URLError:
-            continue
-    raise SystemExit("no GFS run available")
+        if step_exists(day, run, last_step):
+            return day, run, moment.replace(hour=run, minute=0, second=0, microsecond=0)
+        print(f"  {day} {run:02d}z not ready yet (f{last_step:03d} missing)", file=sys.stderr)
+    raise SystemExit("no GFS run has finished uploading")
 
 
 def byte_ranges(day, run, step):
@@ -272,7 +305,10 @@ def main():
             "now": {},
         })
 
-    day, run, run_time = latest_run()
+    # The furthest step any part of this bake will ask for: the last day's
+    # 18-hour offset, or the last forecast hour when that is further out.
+    last_step = max(args.hours, args.days * 24 + 18)
+    day, run, run_time = latest_run(last_step)
     print(f"run {day} {run:02d}z", file=sys.stderr)
     total = sum(len(job["points"]) for job in jobs)
     print(f"baking {total} places into {len(jobs)} file(s)", file=sys.stderr)
@@ -342,6 +378,9 @@ def main():
             }
             for cid, _, _ in job["points"] if cid in job["now"]
         }
+        # The caller's `mkdir -p` is not something to rely on: four minutes of
+        # bake should not be thrown away by a missing directory.
+        os.makedirs(os.path.dirname(job["out"]) or ".", exist_ok=True)
         with open(job["out"], "w") as handle:
             json.dump({"updatedAt": stamp, "countries": out}, handle, separators=(",", ":"))
         print(f"wrote {job['out']}: {len(out)} places")
